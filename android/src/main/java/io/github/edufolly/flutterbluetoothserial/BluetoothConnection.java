@@ -93,7 +93,8 @@ public abstract class BluetoothConnection
         private final InputStream input;
         private final OutputStream output;
         private boolean requestedClosing = false;
-        
+        private boolean isClean = false;
+
         ConnectionThread(BluetoothSocket socket) {
             this.socket = socket;
             InputStream tmpIn = null;
@@ -121,32 +122,17 @@ public abstract class BluetoothConnection
 
                     onRead(Arrays.copyOf(buffer, bytes));
                 } catch (IOException e) {
-                    // `input.read` throws when closed by remote device
+                    // `input.read` throws IOException:
+                    // - when closed by remote device
+                    // - when we close the socket after cancelling
                     break;
                 }
             }
 
-            // Make sure output stream is closed
-            if (output != null) {
-                try {
-                    output.close();
-                }
-                catch (Exception e) {}
+            // if we did not cancel we still need to clean
+            if (!requestedClosing) {
+                clean(true);
             }
-
-            // Make sure input stream is closed
-            if (input != null) {
-                try {
-                    input.close();
-                }
-                catch (Exception e) {}
-            }
-
-            // Callback on disconnected, with information which side is closing
-            onDisconnected(!requestedClosing);
-
-            // Just prevent unnecessary `cancel`ing
-            requestedClosing = true;
         }
 
         /// Writes to output stream
@@ -160,27 +146,39 @@ public abstract class BluetoothConnection
 
         /// Stops the thread, disconnects
         public void cancel() {
-            if (requestedClosing) {
-                return;
-            }
             requestedClosing = true;
+            clean(false);
+        }
 
-            // Flush output buffers befoce closing
+        private void clean(boolean byRemote) {
+            // do not run again if it is already clean
+            if (isClean) return;
+            // mark as clean now to avoid re-entering in the middle
+            isClean = true;
+
+            // flush the outputs
             try {
                 output.flush();
             }
             catch (Exception e) {}
 
-            // Close the connection socket
-            if (socket != null) {
-                try {
-                    // Might be useful (see https://stackoverflow.com/a/22769260/4880243)
-                    Thread.sleep(111);
-
-                    socket.close();
-                }
-                catch (Exception e) {}
+            // make sure to close the streams before the socket
+            // also use separated try-catch blocks in case any of them fails
+            try {
+                input.close();
             }
+            catch (Exception e) {}
+            try {
+                output.close();
+            }
+            catch (Exception e) {}
+            try {
+                socket.close();
+            }
+            catch (Exception e) {}
+
+            // callback on disconnected, with information which side is closing
+            onDisconnected(byRemote);
         }
     }
 }
