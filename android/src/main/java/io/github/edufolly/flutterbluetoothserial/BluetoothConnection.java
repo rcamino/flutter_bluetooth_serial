@@ -20,7 +20,7 @@ public abstract class BluetoothConnection
     protected ConnectionThread connectionThread = null;
 
     public boolean isConnected() {
-        return connectionThread != null && connectionThread.requestedClosing != true;
+        return connectionThread != null && !connectionThread.requestedClosing;
     }
 
 
